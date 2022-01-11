@@ -1,5 +1,6 @@
 import imio
 import fire
+import os
 from datetime import datetime
 
 from brainreg.utils import preprocess
@@ -15,14 +16,19 @@ scaling_rounding_decimals = 5
 n_processes = 8
 
 
-def load_preprocess(image_path, scaling):
+def load_preprocess_save(
+    image_path, scaling, nii_filepath, filtered_nii_filepath
+):
     image = imio.load_any(
         image_path,
         scaling[1],
         scaling[2],
         scaling[0],
     )
+    save_nii(image, atlas_voxel_sizes, nii_filepath)
+
     image = preprocess.filter_image(image)
+    save_nii(image, atlas_voxel_sizes, filtered_nii_filepath)
 
     return image
 
@@ -39,13 +45,17 @@ def register_two_images(im1_path: str, im2_path: str, output_directory: str):
             )
         )
 
-    im1 = load_preprocess(im1_path, scaling)
-    im2 = load_preprocess(im2_path, scaling)
-
     niftyreg_paths = NiftyRegPaths(output_directory)
 
-    save_nii(im2, atlas_voxel_sizes, niftyreg_paths.brain_filtered)
-    save_nii(im1, atlas_voxel_sizes, niftyreg_paths.downsampled_filtered)
+    im1_raw_path = os.path.join(output_directory, "im1.nii")
+    im2_raw_path = os.path.join(output_directory, "im2.nii")
+
+    im1 = load_preprocess_save(
+        im1_path, scaling, im1_raw_path, niftyreg_paths.downsampled_filtered
+    )
+    im2 = load_preprocess_save(
+        im2_path, scaling, im2_raw_path, niftyreg_paths.brain_filtered
+    )
 
     registration_params = RegistrationParams()
 
@@ -57,6 +67,15 @@ def register_two_images(im1_path: str, im2_path: str, output_directory: str):
 
     brain_reg.register_affine()
     brain_reg.register_freeform()
+
+    os.rename(
+        niftyreg_paths.control_point_file_path,
+        niftyreg_paths.inverse_control_point_file_path,
+    )
+    brain_reg.transform_to_standard_space(
+        im2_raw_path,
+        niftyreg_paths.freeform_registered_atlas_brain_path,
+    )
 
     print("Finished. Total time taken: %s", datetime.now() - start_time)
 
