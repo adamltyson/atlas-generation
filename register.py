@@ -15,7 +15,20 @@ scaling_rounding_decimals = 5
 n_processes = 8
 
 
+def load_preprocess(image_path, scaling):
+    image = imio.load_any(
+        image_path,
+        scaling[1],
+        scaling[2],
+        scaling[0],
+    )
+    image = preprocess.filter_image(image)
+
+    return image
+
+
 def register_two_images(im1_path: str, im2_path: str, output_directory: str):
+    start_time = datetime.now()
 
     scaling = []
     for idx, vox_size in enumerate(image_voxel_sizes):
@@ -25,19 +38,6 @@ def register_two_images(im1_path: str, im2_path: str, output_directory: str):
                 scaling_rounding_decimals,
             )
         )
-
-    start_time = datetime.now()
-
-    def load_preprocess(image_path, scaling):
-        image = imio.load_any(
-            image_path,
-            scaling[1],
-            scaling[2],
-            scaling[0],
-        )
-        image = preprocess.filter_image(image)
-
-        return image
 
     im1 = load_preprocess(im1_path, scaling)
     im2 = load_preprocess(im2_path, scaling)
