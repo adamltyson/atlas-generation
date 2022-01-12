@@ -2,15 +2,14 @@ import imio
 import fire
 import os
 from datetime import datetime
-
+from pathlib import Path
 from brainreg.utils import preprocess
-from brainreg.backend.niftyreg.paths import NiftyRegPaths
-from brainreg.backend.niftyreg.registration import BrainRegistration
-from brainreg.backend.niftyreg.parameters import RegistrationParams
+
 from brainreg.backend.niftyreg.utils import save_nii
+from utils import register_affine, register_freeform
 
 image_voxel_sizes = (10, 10, 10)
-atlas_voxel_sizes = (25, 25, 25)
+atlas_voxel_sizes = (10, 10, 10)
 
 scaling_rounding_decimals = 5
 n_processes = 8
@@ -45,36 +44,38 @@ def register_two_images(im1_path: str, im2_path: str, output_directory: str):
             )
         )
 
-    niftyreg_paths = NiftyRegPaths(output_directory)
+    Path(output_directory).mkdir(exist_ok=True)
 
     im1_raw_path = os.path.join(output_directory, "im1.nii")
     im2_raw_path = os.path.join(output_directory, "im2.nii")
 
-    im1 = load_preprocess_save(
-        im1_path, scaling, im1_raw_path, niftyreg_paths.downsampled_filtered
+    im1_filtered_path = os.path.join(output_directory, "im1_filtered.nii")
+    im2_filtered_path = os.path.join(output_directory, "im2_filtered.nii")
+    affine_reg_image_path = os.path.join(
+        output_directory, "affine_registered.nii"
     )
-    im2 = load_preprocess_save(
-        im2_path, scaling, im2_raw_path, niftyreg_paths.brain_filtered
+    freeform_reg_image_path = os.path.join(
+        output_directory, "freeform_registered.nii"
+    )
+    affine_transform_path = os.path.join(output_directory, "affine.txt")
+    control_point_file = os.path.join(output_directory, "control_point.nii")
+
+    load_preprocess_save(im1_path, scaling, im1_raw_path, im1_filtered_path)
+    load_preprocess_save(im2_path, scaling, im2_raw_path, im2_filtered_path)
+
+    register_affine(
+        im1_filtered_path,
+        im2_filtered_path,
+        affine_reg_image_path,
+        affine_transform_path,
     )
 
-    registration_params = RegistrationParams()
-
-    brain_reg = BrainRegistration(
-        niftyreg_paths,
-        registration_params,
-        n_processes=n_processes,
-    )
-
-    brain_reg.register_affine()
-    brain_reg.register_freeform()
-
-    os.rename(
-        niftyreg_paths.control_point_file_path,
-        niftyreg_paths.inverse_control_point_file_path,
-    )
-    brain_reg.transform_to_standard_space(
-        im2_raw_path,
-        niftyreg_paths.freeform_registered_atlas_brain_path,
+    register_freeform(
+        im1_filtered_path,
+        im2_filtered_path,
+        freeform_reg_image_path,
+        affine_transform_path,
+        control_point_file,
     )
 
     print("Finished. Total time taken: %s", datetime.now() - start_time)
