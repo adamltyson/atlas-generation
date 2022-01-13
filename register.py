@@ -1,82 +1,75 @@
-import imio
 import fire
-import os
+import pandas as pd
 from datetime import datetime
-from pathlib import Path
-from brainreg.utils import preprocess
 
-from brainreg.backend.niftyreg.utils import save_nii
-from utils import register_affine, register_freeform
-
-image_voxel_sizes = (10, 10, 10)
-atlas_voxel_sizes = (10, 10, 10)
-
-scaling_rounding_decimals = 5
-n_processes = 8
+from paths import ReferencePaths, ImagePaths
+from utils.misc import calculate_scaling
+from utils.image import load_preprocess_save
+from utils.registration import (
+    register_affine,
+    register_freeform,
+    transform_raw_data,
+)
 
 
-def load_preprocess_save(
-    image_path, scaling, nii_filepath, filtered_nii_filepath
+def register_two_images(
+    floating_images: str,
+    reference_image: str,
+    output_directory: str,
+    image_voxel_sizes=(10, 10, 10),
+    atlas_voxel_sizes=(25, 25, 25),
 ):
-    image = imio.load_any(
-        image_path,
-        scaling[1],
-        scaling[2],
-        scaling[0],
-    )
-    save_nii(image, atlas_voxel_sizes, nii_filepath)
-
-    image = preprocess.filter_image(image)
-    save_nii(image, atlas_voxel_sizes, filtered_nii_filepath)
-
-    return image
-
-
-def register_two_images(im1_path: str, im2_path: str, output_directory: str):
     start_time = datetime.now()
+    scaling = calculate_scaling(image_voxel_sizes, atlas_voxel_sizes)
 
-    scaling = []
-    for idx, vox_size in enumerate(image_voxel_sizes):
-        scaling.append(
-            round(
-                float(image_voxel_sizes[idx]) / float(atlas_voxel_sizes[idx]),
-                scaling_rounding_decimals,
-            )
+    reference_paths = ReferencePaths(output_directory)
+
+    print("Loading and filtering reference image")
+    load_preprocess_save(
+        reference_image,
+        scaling,
+        reference_paths.reference_raw_path,
+        reference_paths.reference_filtered_path,
+        atlas_voxel_sizes,
+    )
+
+    image_list = list(pd.read_csv(floating_images, header=None)[0])
+
+    for image_path in image_list:
+        image_paths = ImagePaths(image_path, reference_paths.output_directory)
+        print(f"Loading and filtering: {image_paths.image_path}")
+        load_preprocess_save(
+            image_paths.image_path,
+            scaling,
+            image_paths.image_raw_path,
+            image_paths.image_filtered_path,
+            atlas_voxel_sizes,
         )
 
-    Path(output_directory).mkdir(exist_ok=True)
+        print("Running affine registration")
+        register_affine(
+            image_paths.image_filtered_path,
+            reference_paths.reference_filtered_path,
+            image_paths.affine_reg_image_path,
+            image_paths.affine_transform_path,
+        )
 
-    im1_raw_path = os.path.join(output_directory, "im1.nii")
-    im2_raw_path = os.path.join(output_directory, "im2.nii")
+        print("Running freeform registration")
+        register_freeform(
+            image_paths.image_filtered_path,
+            reference_paths.reference_filtered_path,
+            image_paths.freeform_reg_image_path,
+            image_paths.affine_transform_path,
+            image_paths.control_point_file,
+        )
 
-    im1_filtered_path = os.path.join(output_directory, "im1_filtered.nii")
-    im2_filtered_path = os.path.join(output_directory, "im2_filtered.nii")
-    affine_reg_image_path = os.path.join(
-        output_directory, "affine_registered.nii"
-    )
-    freeform_reg_image_path = os.path.join(
-        output_directory, "freeform_registered.nii"
-    )
-    affine_transform_path = os.path.join(output_directory, "affine.txt")
-    control_point_file = os.path.join(output_directory, "control_point.nii")
-
-    load_preprocess_save(im1_path, scaling, im1_raw_path, im1_filtered_path)
-    load_preprocess_save(im2_path, scaling, im2_raw_path, im2_filtered_path)
-
-    register_affine(
-        im1_filtered_path,
-        im2_filtered_path,
-        affine_reg_image_path,
-        affine_transform_path,
-    )
-
-    register_freeform(
-        im1_filtered_path,
-        im2_filtered_path,
-        freeform_reg_image_path,
-        affine_transform_path,
-        control_point_file,
-    )
+        print("Transforming raw data to reference space")
+        transform_raw_data(
+            image_paths.image_raw_path,
+            reference_paths.reference_raw_path,
+            image_paths.transformed_raw_path,
+            image_paths.control_point_file,
+        )
 
     print("Finished. Total time taken: %s", datetime.now() - start_time)
 
