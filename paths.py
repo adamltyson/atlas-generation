@@ -15,7 +15,7 @@ class ImagePaths:
     def __init__(self, image_path, output_directory):
         self.image_path = Path(image_path)
         self.image_dir = output_directory / self.image_path.stem
-        self.image_dir.mkdir()
+        self.image_dir.mkdir(exist_ok=True)
         self.image_raw_path = self.image_dir / (
             self.image_path.stem + "_raw.nii"
         )
