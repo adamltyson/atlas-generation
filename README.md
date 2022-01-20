@@ -10,6 +10,13 @@ Aim is to include:
 * Packaging for the [BrainGlobe Atlas API](https://github.com/brainglobe/bg-atlasapi)
 * Napari plugin for the above in a single graphical environment
 
+## To install
+```bash
+conda create --name atlas-generation python=3.9
+conda activate atlas-generation
+pip install brainreg pandas fire
+git clone https://github.com/adamltyson/atlas-generation
+```
 ## Current scripts:
 ### `register.py` - Register N images to a single reference image
 Usage:
